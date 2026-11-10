@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A digital bouquet of tulips for My Bibi, with a night mode and interactive watering.">
+<meta author="Cyrus Garin">
+<title>Tulips</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+
+  canvas {
+    position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block;
+    object-fit: contain; background: #000;
+  }
+
+  #intro-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #000;
+    color: #d8b4e2;
+    font-family: Menlo, Consolas, "Courier New", monospace;
+    font-size: 20px;
+    line-height: 1.4;
+    z-index: 50;
+    transition: opacity 1s ease-in-out;
+    text-align: left;
+  }
+
+  #intro-text {
+    min-width: 20ch;
+    white-space: pre-line;
+    text-shadow: 0 0 12px #9a65bd;
+    animation: greeting-in 1.2s ease-out both;
+  }
+
+  #intro-text::after {
+    content: "_";
+    animation: cursor-blink 0.7s steps(2, start) infinite;
+  }
+
+  #credit {
+    position: fixed;
+    z-index: 8;
+    left: 12px;
+    right: 12px;
+    bottom: 14px;
+    color: #cbb8dc;
+    font: 11px/1.5 Menlo, Consolas, "Courier New", monospace;
+    text-shadow: 0 0 8px rgba(190, 145, 230, 0.65);
+    text-align: center;
+  }
+
+  #credit-text span {
+    display: block;
+    opacity: 0;
+    animation: credit-line-in 0.8s ease-out forwards;
+  }
+
+  #credit-text span + span {
+    animation-delay: 0.35s;
+  }
+
+  #credit a {
+    color: #e7c7ff;
+    text-decoration: none;
+  }
+
+  #credit a:hover, #credit a:focus-visible {
+    color: #fff;
+    text-decoration: underline;
+  }
+
+  #controls {
+    position: fixed;
+    z-index: 10;
+    top: 50%;
+    left: calc(50% + clamp(145px, 16vw, 230px));
+    transform: translateY(-50%);
+    width: min(190px, 25vw);
+    padding: 12px;
+    border: 1px solid #a68aba;
+    background: rgba(12, 9, 20, 0.94);
+    color: #f0e5f7;
+    font: 14px/1.5 Menlo, Consolas, "Courier New", monospace;
+    box-shadow: 0 0 22px rgba(180, 130, 220, 0.32);
+  }
+
+  #controls[hidden] { display: none; }
+  #scene-status { margin: 0 0 10px; }
+  #button-list { display: grid; gap: 8px; }
+
+  #controls button {
+    min-height: 38px;
+    border: 1px solid #ae91c9;
+    background: #171322;
+    color: #f0e5f7;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  #controls button:hover, #controls button:focus-visible {
+    background: #39294a;
+    outline: 1px solid #f0e5f7;
+  }
+
+  @keyframes greeting-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes cursor-blink {
+    to { visibility: hidden; }
+  }
+
+  @keyframes credit-line-in {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (max-width: 640px) {
+    #credit { bottom: 76px; }
+
+    #controls {
+      top: auto;
+      left: auto;
+      right: 50%;
+      bottom: 12px;
+      width: min(440px, calc(100vw - 28px));
+      transform: translateX(50%);
+      padding: 8px;
+    }
+
+    #scene-status { margin: 0 0 5px; }
+    #button-list { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    #controls button { min-height: 34px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="intro-screen">
+  <div id="intro-text" aria-live="polite"></div>
+</div>
+
+<canvas id="view" aria-label="ASCII purple tulips in a flower pot by a window"></canvas>
+
+<aside id="controls" hidden aria-label="Flower controls">
+  <p id="scene-status">The tulips are blooming...</p>
+  <div id="button-list">
+    <button id="retry-button" type="button">Retry</button>
+    <button id="water-button" type="button">Water</button>
+    <button id="mode-button" type="button">Night</button>
+  </div>
+</aside>
+
+<footer id="credit" aria-label="Flower code credit">
+  <div id="credit-text">
+    <span>Huge thanks &amp; credits to where it's due.</span>
+    <span>Flower source code from: <a href="https://github.com/arimecoa" target="_blank" rel="noopener noreferrer">github.com/arimecoa</a></span>
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+// ================================================================ Intro Sequence (Untouched)
+const introScreen = document.getElementById("intro-screen");
+const introDiv = document.getElementById("intro-text");
+const introBeats = [
+  { text: "Hi Bibi!", pause: 2500 },
+  { text: "I know you love tulips, but for now...", pause: 1000 },
+  { text: "this is only a digital version of them.", pause: 1700 },
+  { text: "iloveyou...", pause: 1200 },
+  { text: "always. <3", pause: 1800 },
+];
+
+let currentBeat = 0;
+let currentChar = 0;
+function typeIntro() {
+  if (currentBeat >= introBeats.length) {
+    setTimeout(() => {
+      introScreen.style.opacity = "0";
+      setTimeout(() => introScreen.remove(), 1000);
+    }, 1400);
+    return;
+  }
+
+  const beat = introBeats[currentBeat];
+  if (currentChar < beat.text.length) {
+    introDiv.textContent += beat.text.charAt(currentChar);
+    currentChar++;
+    setTimeout(typeIntro, 55);
+    return;
+  }
+
+  introDiv.textContent += "\n";
+  currentBeat++;
+  currentChar = 0;
+  const pause = beat.pause;
+  setTimeout(typeIntro, pause);
+}
+setTimeout(typeIntro, 350);
+
+
+// ================================================================ Flower Engine Math
+const FONT_SIZE = 10, FPS = 30;
+const FONT = `${FONT_SIZE}px Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace`;
+const probe = document.createElement("canvas").getContext("2d");
+probe.font = FONT;
+const CW = Math.max(1, Math.round(probe.measureText("M").width)), CH = Math.round(FONT_SIZE * 1.15);
+
+const ROWS = 160;
+const COLS = Math.max(150, Math.min(640, Math.round(ROWS * CH / CW * innerWidth / Math.max(1, innerHeight))));
+const N = COLS * ROWS;
+const PLANT_SHIFT = 0;
+const WAVE_PERIOD = 14, BREATH = 7, BREATH_DEPTH = 0.18;
+const settings = { wind: 3, size: 1.8, glow: 0.6 };   
+
+const BUCKETS = [" ", ".'`", ":;,-~", "!/\\|()[]{}<>?+=", "tfjrxnuvczil", "XYUJCLQ0OZmwqpdbkhao", "#MW&8%B", "@$"];
+const LEVELS = [0.06, 0.15, 0.30, 0.45, 0.60, 0.75, 0.90];
+
+const BUD = [0.55, 0.74, 0.36];
+const STEM = [0.28, 0.56, 0.26], ANTHER = [0.95, 0.42, 0.10];
+const PALETTES = {
+  purple: { deep: [0.35, 0.05, 0.45], mid: [0.65, 0.25, 0.85], tip: [0.85, 0.55, 0.95], sheen: [0.95, 0.80, 1.00], spots: 0, anther: [0.9, 0.8, 0.2] }
+};
+
+// Flowers & Buds (Untouched)
+const FLOWERS_BASE = [
+  [[-16, 65], 13, [-0.5, -0.55, 0.68], "purple", 5.4, 0.9],
+  [[16, 63], 13, [0.5, -0.6, 0.62], "purple", 5.8, 0.9],
+  [[0, 56], 14, [0.08, -0.85, 0.5], "purple", 6.2, 0.9],
+  [[-9, 74], 15, [-0.25, -0.42, 0.9], "purple", 4.8, 1.0],
+  [[10, 72], 15, [0.25, -0.4, 0.9], "purple", 4.5, 1.0],
+];
+const BUDS_BASE = [
+  [[-7, 57], 7, [-0.3, -0.95, 0.1], 0.0, "purple"],
+  [[8, 58], 7, [0.35, -0.93, 0.1], 0.9, "purple"],
+  [[23, 72], 6, [0.8, -0.55, 0.2], 0.0, "purple"],
+];
+
+const TAU = Math.PI * 2, rad = (d) => d * Math.PI / 180;
+const clamp = (x, lo = 0, hi = 1) => (x < lo ? lo : x > hi ? hi : x);
+function smoothstep(a, b, x) { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); }
+const wave = (t, k, ph = 0) => Math.sin(TAU * k * t / WAVE_PERIOD + ph);
+function hash3(a, b, c) {                       
+  let h = (Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (v) => mul(v, 1 / (Math.hypot(v[0], v[1], v[2]) + 1e-9));
+const LIGHT = norm([-0.5, -0.6, 0.62]);        
+
+const Xc = new Float32Array(COLS), Yr = new Float32Array(ROWS);
+for (let c = 0; c < COLS; c++) Xc[c] = (c + 0.5 - COLS / 2) * 0.5 + PLANT_SHIFT;
+for (let r = 0; r < ROWS; r++) Yr[r] = r + 0.5;
+const lum = new Float32Array(N), rgb = new Float32Array(N * 3), rowShift = new Float32Array(ROWS);
+const savedShift = new Float32Array(ROWS);
+function set(i, l, cr, cg, cb) { lum[i] = l; const j = i * 3; rgb[j] = cr; rgb[j + 1] = cg; rgb[j + 2] = cb; }
+function addLight(i, dl, cr, cg, cb) {
+  const l0 = lum[i], l1 = clamp(l0 + dl);
+  const j = i * 3, w = dl / (l1 + 1e-5);
+  lum[i] = l1;
+  rgb[j] = clamp(rgb[j] * (1 - w * 0.55) + cr * w);
+  rgb[j + 1] = clamp(rgb[j + 1] * (1 - w * 0.55) + cg * w);
+  rgb[j + 2] = clamp(rgb[j + 2] * (1 - w * 0.55) + cb * w);
+}
+
+const SEG = new Float64Array(16 * 9);            
+function brush(pts, hws, av, fn) {
+  const n = pts.length, ns = n - 1;
+  if (n < 2) return;
+  let xmin = 1e9, xmax = -1e9, ymin = 1e9, ymax = -1e9, maxw = 0;
+  for (let k = 0; k < n; k++) {
+    const x = pts[k][0], y = pts[k][1];
+    if (x < xmin) xmin = x; if (x > xmax) xmax = x; if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+    if (hws[k] > maxw) maxw = hws[k];
+  }
+  for (let s = 0; s < ns; s++) {
+    const o = s * 9, ax = pts[s][0], ay = pts[s][1], dx = pts[s + 1][0] - ax, dy = pts[s + 1][1] - ay;
+    SEG[o] = ax; SEG[o + 1] = ay; SEG[o + 2] = dx; SEG[o + 3] = dy; SEG[o + 4] = 1 / (dx * dx + dy * dy + 1e-9);
+    SEG[o + 5] = hws[s]; SEG[o + 6] = hws[s + 1] - hws[s]; SEG[o + 7] = av[s]; SEG[o + 8] = av[s + 1] - av[s];
+  }
+  const pad = maxw + 1;
+  const r0 = Math.max(0, Math.floor(ymin - pad)), r1 = Math.min(ROWS, Math.ceil(ymax + pad));
+  for (let r = r0; r < r1; r++) {
+    const py = Yr[r], sh = rowShift[r];                
+    let rx0 = 1e9, rx1 = -1e9;                          
+    for (let s = 0, o = 0; s < ns; s++, o += 9) {
+      const pw = Math.max(SEG[o + 5], SEG[o + 5] + SEG[o + 6]) + 1;
+      const ya = SEG[o + 1], yb = ya + SEG[o + 3];
+      if (py < Math.min(ya, yb) - pw || py > Math.max(ya, yb) + pw) continue;
+      const xa = SEG[o], xb = xa + SEG[o + 2];
+      rx0 = Math.min(rx0, Math.min(xa, xb) - pw); rx1 = Math.max(rx1, Math.max(xa, xb) + pw);
+    }
+    if (rx0 > rx1) continue;
+    const c0 = Math.max(0, Math.floor((rx0 + sh - PLANT_SHIFT) * 2 + COLS / 2));
+    const c1 = Math.min(COLS, Math.ceil((rx1 + sh - PLANT_SHIFT) * 2 + COLS / 2));
+    for (let c = c0; c < c1; c++) {
+      const px = Xc[c] - sh;
+      let best = 1, bestS = -1, bestU = 0;            
+      for (let s = 0, o = 0; s < ns; s++, o += 9) {
+        const qx = px - SEG[o], qy = py - SEG[o + 1], dx = SEG[o + 2], dy = SEG[o + 3];
+        let u = (qx * dx + qy * dy) * SEG[o + 4];
+        u = u < 0 ? 0 : u > 1 ? 1 : u;
+        const ex = qx - dx * u, ey = qy - dy * u;
+        let hw = SEG[o + 5] + SEG[o + 6] * u;
+        if (hw < 1e-3) hw = 1e-3;
+        const q2 = (ex * ex + ey * ey) / (hw * hw);
+        if (q2 < best) { best = q2; bestS = s; bestU = u; }
+      }
+      if (bestS < 0) continue;
+      const o = bestS * 9;
+      const cr = SEG[o + 2] * (py - SEG[o + 1]) - SEG[o + 3] * (px - SEG[o]);
+      const side = cr > 0 ? 1 : cr < 0 ? -1 : 0;
+      fn(r * COLS + c, SEG[o + 7] + SEG[o + 8] * bestU, Math.sqrt(best) * side, r, c);
+    }
+  }
+}
+const lin = (n) => Array.from({ length: n }, (_, k) => k / (n - 1));
+const lerp = (a, b, k) => a + (b - a) * clamp(k);
+const lerp3 = (a, b, k) => { k = clamp(k); return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]; };
+
+function tube(pts, w0, w1, col) {
+  const n = pts.length;
+  if (n < 2) return;
+  const hws = lin(n).map((k) => w0 + (w1 - w0) * k);
+  const dark = mul(col, 0.6), lite = mul(col, 1.25);
+  brush(pts, hws, lin(n), (i, a, q) => {
+    const k = clamp(0.5 - 0.5 * q);
+    set(i, 0.42 + 0.35 * (1 - Math.abs(q)) - 0.18 * q,
+      dark[0] + (lite[0] - dark[0]) * k, dark[1] + (lite[1] - dark[1]) * k, dark[2] + (lite[2] - dark[2]) * k);
+  });
+}
+function curve(p0, p1, bulge, grow, n = 10) {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], L = Math.hypot(dx, dy) + 1e-9;
+  const nx = -dy / L, ny = dx / L, out = [];
+  for (let k = 0; k < n; k++) {
+    const s = (k / (n - 1)) * grow, b = bulge * Math.sin(Math.PI * s);
+    out.push([p0[0] + dx * s + nx * b, p0[1] + dy * s + ny * b]);
+  }
+  return out;
+}
+const LEAF_D = [0.07, 0.36, 0.13], LEAF_L = [0.38, 0.76, 0.32], UNDER = [0.46, 0.68, 0.50], OLD_TIP = [0.70, 0.66, 0.26];
+
+function leaf(L, t, unfurl) {
+  if (unfurl <= 0.01) return;
+  const n = 12, len = L.len * (0.3 + 0.7 * unfurl), wid = L.wid * (0.4 + 0.6 * unfurl);
+  const ang0 = L.stemAng + (L.ang - L.stemAng) * unfurl;                  
+  const sway = rad(4) * wave(t, 3, L.seed);
+  const pts = [], hws = [];
+  let x = L.x, y = L.y;
+  for (let k = 0; k < n; k++) {
+    const a = k / (n - 1);
+    pts.push([x, y]);
+    const tw = Math.cos(L.twist * a + L.phase);                            
+    hws.push(Math.max(0.06, wid * Math.pow(Math.sin(Math.PI * Math.pow(a, 0.5)), 0.85) * (0.2 + 0.8 * Math.abs(tw))));
+    const bend = L.droop * Math.pow(a, 1.6) + L.kink * smoothstep(L.kinkAt - 0.05, L.kinkAt + 0.05, a);   
+    const ang = ang0 + sway * a + L.dir * bend * unfurl;
+    x += Math.cos(ang) * len / (n - 1); y += Math.sin(ang) * len / (n - 1);
+  }
+  brush(pts, hws, lin(n), (i, a, q) => {
+    const aq = Math.abs(q), back = Math.cos(L.twist * a + L.phase) < 0;
+    const lit = (q > 0) !== back ? 1 : 0;                                  
+    let l = (0.42 + 0.28 * lit + 0.22 * Math.pow(1 - aq, 0.7)) * (0.88 + 0.12 * Math.cos(q * Math.PI * 6));
+    if (aq < 0.08) l = back ? 0.78 : 0.34;                                  
+    else if (aq > 0.88) l += 0.12;                                          
+    l *= 0.8 + 0.2 * clamp(a * 6);                                          
+    let c = back ? lerp3(mul(UNDER, 0.8), UNDER, 0.4 + 0.6 * (1 - aq))      
+                 : lerp3(LEAF_D, LEAF_L, 0.3 + 0.45 * lit + 0.25 * (1 - aq));
+    if (L.old) c = lerp3(c, OLD_TIP, (a - 0.8) * 4);                        
+    set(i, clamp(l), c[0], c[1], c[2]);
+  });
+}
+
+const BUD09 = mul(BUD, 0.9), STAMEN = [0.78, 0.55, 0.45];
+
+// ================================================================ Tulip Math (Untouched)
+function lily(center, axis, size, openness, ripe, t, seed, pal, bright) {
+  if (size <= 0.3) return;
+  const anther = pal.anther || ANTHER, spotRate = pal.spots;
+  const a3 = norm(axis), ref = Math.abs(a3[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const u3 = norm(cross(a3, ref)), v3 = cross(a3, u3), c3 = [center[0], center[1], 0];
+  const spin = rad(15) + rad(3) * wave(t, 3, seed);
+  const petals = [];
+  for (let k = 0; k < 6; k++) {
+    const inner = k % 2 === 1, phi = spin + k * Math.PI / 3;
+    const radial = add(mul(u3, Math.cos(phi)), mul(v3, Math.sin(phi))), tangent = cross(a3, radial);
+    
+    const theta = rad(5 + (inner ? 25 : 32) * openness);                  
+    const curl = rad(10) * Math.pow(Math.max(openness, 0), 1.5);           
+    const L = size * (inner ? 0.90 : 1), W = size * (inner ? 0.45 : 0.40), n = 9;
+    
+    const pts3 = [], hws = [];
+    let p = add(c3, mul(radial, size * 0.04));
+    for (let i = 0; i < n; i++) {
+      const a = i / (n - 1);
+      pts3.push(p);
+      hws.push(W * Math.pow(Math.sin(Math.PI * Math.pow(Math.min(a, 0.999), 0.65)), 0.85));
+      const th = theta + curl * a * a;
+      p = add(p, mul(add(mul(a3, Math.cos(th)), mul(radial, Math.sin(th))), L / (n - 1)));
+    }
+    const normal = norm(cross(norm(sub(pts3[4], pts3[0])), tangent)), facing = normal[2];
+    const tproj = Math.hypot(tangent[0], tangent[1]);                       
+    petals.push({
+      depth: pts3.reduce((s, q) => s + q[2], 0) / n, pts: pts3.map((q) => [q[0], q[1]]),
+      hws: hws.map((h) => Math.max(h * Math.max(tproj, 0.3), 0.08)), normal, facing, pseed: seed * 10 + k,
+    });
+  }
+  petals.sort((a, b) => a.depth - b.depth);                                
+  const dim = 0.55 + 0.45 * bright, av = lin(9);
+  for (const pt of petals) {
+    const sg = pt.facing < 0 ? -1 : 1;
+    const light = 0.35 + 0.65 * Math.max(0, dot(mul(pt.normal, sg), LIGHT));
+    const back = pt.facing < 0;
+    brush(pt.pts, pt.hws, av, (i, a, q, r, c) => {
+      const aq = Math.abs(q);
+      let l = light * (0.62 + 0.38 * Math.pow(1 - aq, 0.6)) * (back ? 0.8 : 1);
+      l *= 0.75 + 0.35 * clamp(a * 2);                                      
+      if (aq < 0.1) l *= 0.65;                                              
+      let col = lerp3(pal.deep, pal.mid, a * 2.4);
+      col = lerp3(col, pal.tip, (a - 0.55) * 1.8 + (aq - 0.7) * 1.6);
+      col = lerp3(col, pal.sheen, (light - 0.75) * 2.5 * (1 - aq));       
+      col = lerp3(BUD09, col, ripe * clamp(0.3 + a * 1.5) + ripe * 0.3);    
+      if (a < 0.4 && a > 0.08 && openness > 0.4 && hash3(c, r, pt.pseed) % 100 < spotRate) l = 0.2;   
+      set(i, clamp(l) * bright, col[0] * dim, col[1] * dim, col[2] * dim);
+    });
+  }
+  const show = smoothstep(0.35, 0.85, openness);                          
+  if (show <= 0) return;
+  for (let k = 0; k < 7; k++) {
+    const pistil = k === 6, phi = k * TAU / 6 + 0.3;
+    const radial = add(mul(u3, Math.cos(phi)), mul(v3, Math.sin(phi)));
+    const th = pistil ? 0 : rad(28) * openness;
+    const d3 = add(mul(a3, Math.cos(th)), mul(radial, Math.sin(th)));
+    const ln = size * (pistil ? 0.62 : 0.55) * show;
+    const mid = add(add(c3, mul(d3, ln * 0.5)), mul(radial, pistil ? 0 : 0.4)), tip = add(c3, mul(d3, ln));
+    brush([[c3[0], c3[1]], [mid[0], mid[1]], [tip[0], tip[1]]], [0.22, 0.18, 0.15], [0, 0.5, 1],
+      (i) => set(i, 0.55 * bright, STAMEN[0], STAMEN[1], STAMEN[2]));
+    if (!pistil) brush([[tip[0] - d3[0] * 0.9, tip[1] - d3[1] * 0.9], [tip[0] + d3[0] * 0.4, tip[1] + d3[1] * 0.4]],
+      [0.55, 0.55], [0, 1], (i) => set(i, 0.9 * bright, anther[0], anther[1], anther[2]));
+  }
+}
+
+// ================================================================ Layout & Timing
+const rnd = (k) => hash3(k, 911, 37) / 4294967296;      
+const STEM_DUR = 1.0;                                   
+const BASE_Y = 88;
+const BLOOM_TIME = 10.5;
+const WATER_DURATION = 9.0;
+const easeOut = (x) => 1 - Math.pow(1 - clamp(x), 3);   
+let FLOWERS = [], BUDS = [];
+let isDay = false;
+let dayMix = 0;
+let wateringAt = -Infinity;
+
+function pathAt(path, frac) {                           
+  const f = frac * (path.length - 1), k = Math.min(path.length - 2, Math.floor(f)), u = f - k;
+  const a = path[k], b = path[k + 1];
+  return { x: a[0] + (b[0] - a[0]) * u, y: a[1] + (b[1] - a[1]) * u, ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+}
+
+function buildLayout() {
+  const DELAY = 6.0;
+  
+  const fl = FLOWERS_BASE.map(([pos, size, axis, col, tOpen, bright], i) => ({     
+    pos, size, axis, col, bright, baseX: pos[0] * 0.12, bulge: 2.5 * Math.sign(pos[0] || 1) * (i % 2 ? 1 : -0.6),
+    start: 0.05 + 0.035 * i + DELAY, tOpen: 1.7 + (tOpen - 3.9) * 0.55 + DELAY,
+  }));
+  const bd = BUDS_BASE.map(([pos, size, axis, ripe, col], i) => ({
+    pos, size, axis, ripe, col, baseX: pos[0] * 0.12, bulge: 2.5 * Math.sign(pos[0] || 1) * (i % 2 ? -0.6 : 1),
+    start: 0.15 + 0.05 * i + DELAY,
+  }));
+  for (const o of [...fl, ...bd]) {
+    o.end = o.start + STEM_DUR;                                     
+    o.path = curve([o.baseX, BASE_Y], o.pos, o.bulge, 1, 14);
+  }
+  fl.forEach((f, i) => {
+    f.tOpen = Math.max(f.tOpen, f.end + 0.6);                       
+    const front = f.bright > 0.8;
+    const fv0 = clamp((BASE_Y - (ROWS - 4)) / (BASE_Y - f.pos[1]), 0.04, 0.6), fv1 = Math.min(0.78, fv0 + 0.62);
+    const fracs = front ? [0, 0.25, 0.5, 0.75, 1].map((u) => fv0 + (fv1 - fv0) * u) : [0.55, 0.72];
+    f.leaves = fracs.map((fr, j) => {
+      const sd = i * 31 + j * 7 + 3, frac = clamp(fr + (rnd(sd) - 0.5) * 0.05, 0.04, 0.82);
+      const p = pathAt(f.path, frac), side = (i + j) % 2 ? 1 : -1;
+      const ang = p.ang + side * rad(28 + rnd(sd + 1) * 30);
+      return {
+        x: p.x, y: p.y, stemAng: p.ang, ang, dir: Math.cos(ang) >= 0 ? 1 : -1, seed: sd,
+        len: (20 - j * 2.5) * (0.8 + rnd(sd + 2) * 0.4) * (front ? 1 : 0.75), wid: 3.0 + rnd(sd + 3) * 1.1,
+        droop: rad(25 + rnd(sd + 4) * 45) * (1 - frac * 0.6),
+        kink: rnd(sd + 5) < 0.45 ? rad(40 + rnd(sd + 6) * 45) : 0, kinkAt: 0.4 + rnd(sd + 7) * 0.3,
+        twist: 1 + rnd(sd + 8) * 2.6, phase: rnd(sd + 9) * TAU, old: rnd(sd + 10) < 0.25,
+        tAt: f.start + STEM_DUR * (1 - Math.cbrt(1 - frac)),         
+      };
+    });
+  });
+  FLOWERS = fl; BUDS = bd;
+}
+buildLayout();
+
+
+// ================================================================ Volumetric Environment, Vase, Sunbeams & Fluid Watering
+function vaseHalfWidth(py) {
+  if (py < 86 || py > 123) return 0;
+  const u = (py - 86) / 37; // 0 at rim (86), 1 at base (123)
+  const lip = 3.2 * Math.exp(-Math.pow((u - 0.03) / 0.045, 2));
+  const neck = -2.8 * Math.exp(-Math.pow((u - 0.15) / 0.09, 2));
+  const belly = 6.2 * Math.sin(Math.PI * clamp((u - 0.12) / 0.78, 0, 1));
+  const foot = 1.4 * Math.exp(-Math.pow((u - 0.96) / 0.05, 2));
+  return 10.2 + lip + neck + belly + foot - 1.8 * u;
+}
+
+function renderBackgroundAndCountertop(t, dm) {
+  // Window geometry: arched casement window behind the flowers
+  const winW = 35.0, winTopY = 26.0, winBotY = 78.0;
+  const sunX = 18.5, sunY = 21.5;
+
+  for (let r = 0; r < ROWS; r++) {
+    const py = Yr[r];
+    for (let c = 0; c < COLS; c++) {
+      const px = Xc[c];
+      const i = r * COLS + c;
+      const dither = (hash3(r, c, 13) % 100) * 0.0012;
+
+      // 1. Ambient interior wall glow behind window and bouquet
+      const wallDist = Math.hypot(px / 52, (py - 68) / 62);
+      if (hash3(r, c, 1) % 100 < 36) {
+        const wl = (0.09 + 0.06 * dm) * Math.exp(-wallDist * wallDist * 1.35);
+        const wc = lerp3([0.38, 0.18, 0.50], [0.42, 0.36, 0.52], dm);
+        set(i, wl, wc[0], wc[1], wc[2]);
+      } else {
+        set(i, 0, 0, 0, 0);
+      }
+
+      // 2. Arched Window Test
+      let inArch = false, archDist = 0;
+      if (py >= 7.0 && py <= winBotY && Math.abs(px) <= winW + 3.2) {
+        if (py < winTopY) {
+          // Elliptical arch top
+          archDist = Math.hypot(px / winW, (py - winTopY) / 18.5);
+          inArch = archDist <= 1.08;
+        } else {
+          archDist = Math.abs(px) / winW;
+          inArch = archDist <= 1.08;
+        }
+      }
+
+      if (inArch) {
+        const isFrameBorder = (py < winTopY ? archDist > 0.92 : Math.abs(px) > winW * 0.92) || py > winBotY - 2.2;
+        const isMullion = Math.abs(px) < 1.1 || Math.abs(py - 44.0) < 0.95 || (py < winTopY && Math.abs(archDist - 0.52) < 0.035 && py < 24);
+
+        if (isFrameBorder || isMullion) {
+          // 3D beveled window casement & wooden mullions
+          const bevel = isMullion
+            ? 1.0 - Math.min(Math.abs(px) / 1.1, Math.abs(py - 44.0) / 0.95)
+            : 1.0 - Math.abs(archDist - 0.99) * 8.0;
+          const sunProximity = Math.exp(-Math.hypot(px - sunX, py - sunY) / 34);
+          const fl = clamp((0.26 + 0.24 * clamp(bevel) + 0.18 * sunProximity * (0.4 + 0.6 * dm)) + dither * 15);
+          const fNight = lerp3([0.28, 0.22, 0.42], [0.68, 0.56, 0.85], clamp(bevel * 0.8 + sunProximity * 0.5));
+          const fDay = lerp3([0.45, 0.32, 0.24], [0.98, 0.84, 0.62], clamp(bevel * 0.8 + sunProximity * 0.6));
+          const fc = lerp3(fNight, fDay, dm);
+          set(i, fl, fc[0], fc[1], fc[2]);
+        } else {
+          // Inside Window Glass: Sky, Celestial Bodies, Clouds & Layered Mountains
+          const skyU = clamp((py - 8) / (winBotY - 8));
+
+          // Night sky vs Day sky gradient
+          const nightSky = lerp3([0.09, 0.10, 0.28], [0.28, 0.20, 0.46], Math.pow(skyU, 0.85));
+          const daySky = lerp3([0.26, 0.60, 0.96], [0.88, 0.86, 0.78], Math.pow(skyU, 1.1));
+          let skyCol = lerp3(nightSky, daySky, dm);
+          let skyLum = lerp(0.08 + 0.12 * skyU, 0.22 + 0.24 * skyU, dm) + dither * 18;
+
+          // Twinkling Stars (Night)
+          if (dm < 0.95) {
+            const starHash = hash3(r, c, 99);
+            if (starHash % 180 === 0 && py < 56) {
+              const twinkle = 0.55 + 0.45 * Math.sin(t * 3.2 + (starHash % 31));
+              const sl = (1 - dm) * (0.45 + 0.5 * twinkle);
+              if (sl > skyLum) {
+                skyLum = sl;
+                skyCol = lerp3([0.75, 0.82, 1.0], [1.0, 0.95, 0.88], (starHash % 10) / 10);
+              }
+            }
+          }
+
+          // Sun (Day) & Crescent Moon (Night) at (sunX, sunY)
+          const dxS = (px - sunX) * 1.05, dyS = py - sunY;
+          const distS = Math.hypot(dxS, dyS);
+          // Atmospheric halo around sun/moon
+          const halo = Math.exp(-distS / (11.0 + 6.0 * dm));
+          skyLum = clamp(skyLum + halo * (0.20 + 0.28 * dm));
+          skyCol = lerp3(skyCol, lerp3([0.82, 0.78, 0.98], [1.0, 0.92, 0.65], dm), clamp(halo * 0.75));
+
+          if (distS <= 5.6) {
+            // Crescent cutout for night moon vs full solar disc in day
+            const cutDist = Math.hypot(dxS + 2.1, dyS - 1.1);
+            const moonMask = smoothstep(3.8, 4.5, cutDist);
+            const bodyMask = lerp(moonMask, 1.0, dm) * smoothstep(5.6, 4.6, distS);
+            if (bodyMask > 0.05) {
+              const sphereZ = Math.sqrt(Math.max(0, 1 - (distS / 5.6) ** 2));
+              const celLum = clamp(0.68 + 0.30 * sphereZ) * bodyMask;
+              const celCol = lerp3([0.96, 0.92, 0.76], [1.0, 0.97, 0.80], dm);
+              skyLum = lerp(skyLum, celLum, bodyMask);
+              skyCol = lerp3(skyCol, celCol, bodyMask);
+            }
+          }
+
+          // Soft Volumetric Drifting Clouds
+          const cx = px * 0.14 - t * 0.18;
+          const cy1 = (py - 28) * 0.32 + Math.sin(cx * 1.4) * 0.6;
+          const cloudNoise = Math.sin(cx * 2.1) * 0.5 + Math.cos(cx * 3.7 + py * 0.25) * 0.35 + Math.sin(cx * 6.2 - t * 0.3) * 0.15;
+          const cloudMask = smoothstep(0.15, 0.75, cloudNoise - cy1 * cy1 * 0.45) * smoothstep(54, 42, py);
+          if (cloudMask > 0.02) {
+            const cloudLit = clamp(0.55 + 0.35 * (28 - py) * 0.08 + 0.25 * halo);
+            const cColNight = lerp3([0.26, 0.22, 0.44], [0.64, 0.58, 0.82], cloudLit);
+            const cColDay = lerp3([0.68, 0.78, 0.92], [1.0, 0.97, 0.90], cloudLit);
+            const cCol = lerp3(cColNight, cColDay, dm);
+            const cLum = lerp(0.18, 0.58, dm) * cloudLit;
+            skyLum = lerp(skyLum, cLum, cloudMask * (0.45 + 0.45 * dm));
+            skyCol = lerp3(skyCol, cCol, cloudMask * 0.8);
+          }
+
+          // Distant Layered Mountain Ridges (3 parallax layers)
+          const h1 = 56.5 + 4.2 * Math.sin(px * 0.11 + 0.8) + 2.1 * Math.cos(px * 0.27);
+          const h2 = 62.5 + 3.6 * Math.sin(px * 0.16 - 1.4) + 1.8 * Math.sin(px * 0.39);
+          const h3 = 68.0 + 2.8 * Math.cos(px * 0.21 + 2.1) + 1.2 * Math.sin(px * 0.52);
+
+          if (py >= h1) {
+            const slope1 = Math.cos(px * 0.11 + 0.8) * 0.45;
+            const rim1 = Math.exp(-(py - h1) * 0.45);
+            const m1Night = lerp3([0.14, 0.13, 0.28], [0.35, 0.30, 0.55], rim1);
+            const m1Day = lerp3([0.28, 0.46, 0.58], [0.68, 0.78, 0.72], rim1 * 0.7 + clamp(slope1) * 0.3);
+            skyCol = lerp3(m1Night, m1Day, dm);
+            skyLum = lerp(0.14 + 0.10 * rim1, 0.28 + 0.18 * rim1, dm) + dither * 12;
+          }
+          if (py >= h2) {
+            const slope2 = Math.cos(px * 0.16 - 1.4) * 0.5;
+            const rim2 = Math.exp(-(py - h2) * 0.5);
+            const m2Night = lerp3([0.10, 0.11, 0.22], [0.28, 0.26, 0.46], rim2);
+            const m2Day = lerp3([0.20, 0.42, 0.36], [0.55, 0.74, 0.52], rim2 * 0.6 + clamp(slope2) * 0.4);
+            skyCol = lerp3(m2Night, m2Day, dm);
+            skyLum = lerp(0.12 + 0.10 * rim2, 0.24 + 0.20 * rim2, dm) + dither * 14;
+          }
+          if (py >= h3) {
+            const rim3 = Math.exp(-(py - h3) * 0.55);
+            const m3Night = lerp3([0.08, 0.10, 0.18], [0.22, 0.24, 0.38], rim3);
+            const m3Day = lerp3([0.14, 0.34, 0.24], [0.44, 0.66, 0.38], rim3);
+            skyCol = lerp3(m3Night, m3Day, dm);
+            skyLum = lerp(0.10 + 0.08 * rim3, 0.20 + 0.18 * rim3, dm) + dither * 14;
+          }
+
+          set(i, clamp(skyLum), skyCol[0], skyCol[1], skyCol[2]);
+        }
+      }
+
+      // 3. Window Sill Ledge (py = 77.5 .. 81.5)
+      if (py >= 77.5 && py <= 81.5 && Math.abs(px) <= winW + 6.5) {
+        const sillV = (py - 77.5) / 4.0;
+        const sillBevel = Math.sin(Math.PI * clamp(1 - sillV * 0.85, 0, 1));
+        const edgeFade = smoothstep(winW + 6.5, winW + 3.5, Math.abs(px));
+        const sl = (0.24 + 0.36 * sillBevel * (0.65 + 0.35 * dm)) * edgeFade + dither * 10;
+        const sNight = lerp3([0.24, 0.18, 0.36], [0.65, 0.54, 0.82], sillBevel);
+        const sDay = lerp3([0.42, 0.28, 0.20], [0.95, 0.80, 0.58], sillBevel);
+        const sc = lerp3(sNight, sDay, dm);
+        set(i, clamp(sl), sc[0], sc[1], sc[2]);
+      }
+
+      // 4. Sculpted Wooden Countertop (py = 113 .. 140)
+      if (py >= 113.0 && py <= 140.0) {
+        const perspW = 64.0 + (py - 113.0) * 1.15;
+        if (Math.abs(px) <= perspW) {
+          const hFade = smoothstep(perspW, perspW - 8.0, Math.abs(px));
+          if (py <= 126.5) {
+            // Tabletop horizontal plane with wood grain & contact shadow
+            const u = (py - 113.0) / 13.5;
+            const grainWave = Math.sin(py * 2.4 + Math.sin(px * 0.14 + py * 0.35) * 2.6 + (hash3(r, c, 53) % 10) * 0.08);
+            const grain = 0.5 + 0.5 * grainWave;
+
+            // Ambient occlusion & cast shadow from vase base at (0, 121.5)
+            const shadowDx = (px + 2.5 * dm) / 16.5;
+            const shadowDy = (py - 121.0) / 4.2;
+            const shadowDist = Math.hypot(shadowDx, shadowDy);
+            const vaseShadow = 1.0 - 0.72 * Math.exp(-shadowDist * shadowDist * 1.6);
+
+            // Specular pool of window light on the polished wood
+            const lightPool = Math.exp(-Math.pow((px + 6.0) / 36.0, 2) - Math.pow((py - 118.0) / 9.0, 2));
+            let tl = (0.18 + 0.16 * grain + 0.26 * lightPool * (0.55 + 0.45 * dm)) * vaseShadow * hFade;
+
+            const wNight = lerp3([0.22, 0.16, 0.32], [0.58, 0.46, 0.74], 0.35 * grain + 0.65 * lightPool);
+            const wDay = lerp3([0.44, 0.27, 0.16], [0.92, 0.72, 0.48], 0.40 * grain + 0.60 * lightPool);
+            const wc = lerp3(wNight, wDay, dm);
+            set(i, clamp(tl), wc[0], wc[1], wc[2]);
+          } else if (py <= 131.5) {
+            // Front bullnose bevel of the countertop
+            const bv = (py - 126.5) / 5.0;
+            const curveHighlight = Math.sin(Math.PI * (1 - bv * 0.75));
+            const bl = (0.22 + 0.38 * curveHighlight * (0.65 + 0.35 * dm)) * hFade + dither * 10;
+            const bNight = lerp3([0.18, 0.13, 0.28], [0.68, 0.55, 0.85], curveHighlight);
+            const bDay = lerp3([0.36, 0.22, 0.13], [0.96, 0.78, 0.54], curveHighlight);
+            const bc = lerp3(bNight, bDay, dm);
+            set(i, clamp(bl), bc[0], bc[1], bc[2]);
+          } else {
+            // Shadowed apron beneath the countertop lip
+            const av = 1.0 - (py - 131.5) / 8.5;
+            const al = 0.14 * av * av * hFade;
+            const ac = lerp3([0.18, 0.12, 0.26], [0.35, 0.22, 0.14], dm);
+            set(i, clamp(al), ac[0], ac[1], ac[2]);
+          }
+        }
+      }
+    }
+  }
+}
+
+function renderVaseBackRim(dm) {
+  // Back interior opening of the ceramic vase so stems grow out from inside it
+  savedShift.set(rowShift);
+  rowShift.fill(0);
+  const pts = [];
+  for (let k = 0; k <= 10; k++) {
+    const u = (k / 10) * 2 - 1;
+    pts.push([u * 12.2, 86.8 - 1.6 * (1 - u * u)]);
+  }
+  const hws = lin(11).map(() => 1.4);
+  const cNight = [0.32, 0.22, 0.44], cDay = [0.48, 0.34, 0.38];
+  const col = lerp3(cNight, cDay, dm);
+  brush(pts, hws, lin(11), (i, a, q) => {
+    set(i, 0.22 + 0.18 * (1 - Math.abs(q)), col[0], col[1], col[2]);
+  });
+  rowShift.set(savedShift);
+}
+
+function renderVaseBody(t, dm) {
+  const waterAge = t - wateringAt;
+  const wetGlow = (waterAge >= 0 && waterAge <= WATER_DURATION + 4)
+    ? smoothstep(0, 1.2, waterAge) * (1 - smoothstep(WATER_DURATION, WATER_DURATION + 4, waterAge))
+    : 0;
+
+  for (let r = 86; r <= 123; r++) {
+    const py = Yr[r];
+    const hw = vaseHalfWidth(py);
+    if (hw <= 0) continue;
+    const hwNext = vaseHalfWidth(py + 1);
+    const slopeY = (hwNext - hw) * 0.45;
+    const v = (py - 86) / 37;
+
+    const c0 = Math.max(0, Math.floor((-hw - 2) * 2 + COLS / 2));
+    const c1 = Math.min(COLS, Math.ceil((hw + 2) * 2 + COLS / 2));
+
+    for (let c = c0; c < c1; c++) {
+      const px = Xc[c];
+      const u = px / hw;
+      if (Math.abs(u) > 1.0) continue;
+
+      const i = r * COLS + c;
+      // 3D cylindrical + vertical curvature surface normal
+      const nz = Math.sqrt(Math.max(0.02, 1.0 - u * u));
+      const n3 = norm([u, -slopeY, nz]);
+
+      // Primary key light (upper-left) + Window sun/moon rim light (upper-right)
+      const keyDot = Math.max(0, dot(n3, LIGHT));
+      const winLightDir = norm([0.55, -0.45, 0.70]);
+      const winDot = Math.max(0, dot(n3, winLightDir));
+
+      // Fluted vertical ribs & ornamental relief bands
+      const ribWave = Math.cos(u * Math.PI * 7.0);
+      const isBand = Math.abs(v - 0.18) < 0.035 || Math.abs(v - 0.78) < 0.035;
+      const isLip = v < 0.065;
+      const isFoot = v > 0.92;
+      const fluteMod = (isBand || isLip || isFoot) ? 1.08 : (0.90 + 0.12 * ribWave);
+
+      // Specular highlight & Fresnel edge sheen
+      const spec = Math.pow(Math.max(0, dot(n3, norm([-0.25, -0.45, 0.85]))), 14) * 0.55
+                 + Math.pow(winDot, 10) * (0.25 + 0.35 * dm);
+      const fresnel = Math.pow(1.0 - nz, 2.2) * (0.25 + 0.25 * dm);
+
+      let l = (0.18 + 0.50 * keyDot + 0.28 * winDot * (0.5 + 0.5 * dm)) * fluteMod + spec + fresnel;
+      // Darken very bottom contact edge for grounding
+      l *= 0.75 + 0.25 * smoothstep(1.0, 0.88, v);
+
+      // Glazed porcelain/ceramic palette (Amethyst-Pearl at night, Warm Rose-Cream in sunlight)
+      const nightDeep = [0.26, 0.14, 0.38], nightMid = [0.62, 0.42, 0.82], nightHi = [0.95, 0.85, 1.0];
+      const dayDeep = [0.42, 0.24, 0.36], dayMid = [0.85, 0.62, 0.74], dayHi = [1.0, 0.94, 0.88];
+
+      const shadeT = clamp(0.25 + 0.55 * keyDot + 0.35 * winDot);
+      let colNight = lerp3(nightDeep, nightMid, shadeT);
+      colNight = lerp3(colNight, nightHi, clamp(spec + fresnel * 0.7));
+
+      let colDay = lerp3(dayDeep, dayMid, shadeT);
+      colDay = lerp3(colDay, dayHi, clamp(spec + fresnel * 0.7));
+
+      let col = lerp3(colNight, colDay, dm);
+
+      if (isBand || isLip) {
+        // Gilded / pastel relief trim
+        const trimCol = lerp3([0.85, 0.72, 0.98], [1.0, 0.88, 0.64], dm);
+        col = lerp3(col, trimCol, 0.55);
+        l = clamp(l + 0.12);
+      }
+
+      // Internal water ripple luminescence when watered
+      if (wetGlow > 0 && v > 0.22 && v < 0.75) {
+        const ripple = 0.5 + 0.5 * Math.sin(u * 9.0 - t * 6.5 + py * 0.6);
+        const wMask = wetGlow * ripple * nz * 0.35;
+        col = lerp3(col, [0.55, 0.88, 1.0], wMask);
+        l = clamp(l + wMask * 0.25);
+      }
+
+      set(i, clamp(l), col[0], col[1], col[2]);
+    }
+  }
+}
+
+function renderAtmosphereAndSunbeams(t, dm) {
+  // 1. Volumetric Diagonal Sunbeams (Day) & Soft Moonbeams (Night)
+  const sunX = 18.5, sunY = 21.5;
+  // Ray direction slanting from upper-right window down-left across the flowers & countertop
+  const dirX = -0.52, dirY = 0.854;
+  const perpX = 0.854, perpY = 0.52;
+
+  for (let r = 12; r < 132; r++) {
+    const py = Yr[r];
+    for (let c = 0; c < COLS; c++) {
+      const px = Xc[c];
+      const dx = px - sunX, dy = py - sunY;
+      const along = dx * dirX + dy * dirY;
+      if (along < 4.0 || along > 118.0) continue;
+
+      const across = dx * perpX + dy * perpY;
+      const spread = 1.0 + along * 0.012;
+      const normAcross = across / spread;
+      if (Math.abs(normAcross) > 22.0) continue;
+
+      // Multi-shaft interference pattern passing through window mullions
+      const shaft1 = Math.exp(-Math.pow((normAcross + 7.5) / 4.2, 2));
+      const shaft2 = Math.exp(-Math.pow((normAcross - 1.5) / 5.0, 2));
+      const shaft3 = Math.exp(-Math.pow((normAcross - 10.5) / 3.6, 2));
+      const shimmer = 0.82 + 0.18 * Math.sin(normAcross * 0.9 - t * 1.4 + along * 0.05);
+      const distFade = smoothstep(4.0, 18.0, along) * smoothstep(118.0, 45.0, along);
+
+      const beamStrength = (shaft1 * 0.9 + shaft2 * 1.0 + shaft3 * 0.75) * shimmer * distFade;
+      if (beamStrength <= 0.02) continue;
+
+      const i = r * COLS + c;
+      const existingLum = lum[i];
+
+      // Day sunbeams vs subtle Night moonbeams
+      const intensity = beamStrength * lerp(0.08, 0.34, dm);
+      const beamCol = lerp3([0.65, 0.72, 0.98], [1.0, 0.92, 0.62], dm);
+
+      // Add volumetric light to air & illuminate surfaces touched by the rays
+      const dither = (hash3(r, c, 71) % 100) / 100;
+      if (existingLum > 0.12) {
+        addLight(i, intensity * 0.85, beamCol[0], beamCol[1], beamCol[2]);
+      } else if (intensity + dither * 0.06 > 0.065) {
+        addLight(i, intensity * 0.72, beamCol[0], beamCol[1], beamCol[2]);
+      }
+
+      // Floating golden dust motes dancing inside the sunbeams
+      if (dm > 0.2 && beamStrength > 0.35) {
+        const moteShiftR = r + Math.floor(t * 2.5);
+        const moteShiftC = c + Math.floor(Math.sin(t * 1.2 + r * 0.2) * 2);
+        if (hash3(moteShiftC, moteShiftR, 107) % 650 === 0) {
+          set(i, clamp(0.65 + 0.3 * dm), 1.0, 0.94, 0.70);
+        }
+      }
+    }
+  }
+
+  // 2. Night Fireflies / Floating Luminescent Spores (from original flower engine)
+  const pv = 0.55 * smoothstep(3, 4.5, t) * (1 - dm * 0.75);
+  const off = Math.floor(t * 4);
+  if (pv > 0.02) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const i = r * COLS + c;
+        if (lum[i] < 0.12 && hash3(c, r + off, 77) % 1000 < 2) {
+          set(i, pv, 1.0, 0.82, 0.45);
+        }
+      }
+    }
+  }
+}
+
+function renderFluidWatering(t) {
+  const age = t - wateringAt;
+  if (age < 0 || age > WATER_DURATION) return;
+
+  // Save wind shift so the watering can & trajectories aren't warped by flower wind
+  savedShift.set(rowShift);
+  rowShift.fill(0);
+
+  // Smooth entry (0..1.1s), pouring hold, and exit (WATER_DURATION-1.1s..WATER_DURATION)
+  const enter = smoothstep(0.0, 1.1, age);
+  const exit = 1.0 - smoothstep(WATER_DURATION - 1.1, WATER_DURATION, age);
+  const presence = enter * exit;
+  const pourActive = smoothstep(0.55, 1.2, age) * (1.0 - smoothstep(WATER_DURATION - 1.4, WATER_DURATION - 0.6, age));
+
+  // Gentle bobbing motion while pouring
+  const bobX = lerp(-18, 0, enter) + (1 - exit) * -16 + Math.sin(age * 2.6) * 0.9;
+  const bobY = lerp(-10, 0, enter) + (1 - exit) * -8 + Math.cos(age * 2.6) * 0.7;
+  const canX = -34.0 + bobX;
+  const canY = 36.0 + bobY;
+
+  // 1. 3D Shaded Vintage Watering Can using distance-field brush strokes
+  const canColDark = [0.42, 0.34, 0.58];
+  const canColMid  = [0.76, 0.66, 0.92];
+  const canColSpec = [0.98, 0.94, 1.00];
+  const brassCol   = [0.96, 0.82, 0.52];
+
+  // Arched rear/top handle
+  const handlePts = [
+    [canX - 4.5, canY - 3.2],
+    [canX - 9.0, canY - 6.0],
+    [canX - 11.2, canY - 1.0],
+    [canX - 9.2, canY + 4.5],
+    [canX - 4.0, canY + 4.8],
+  ];
+  brush(handlePts, [0.75, 0.85, 0.85, 0.85, 0.75], lin(5), (i, a, q) => {
+    const l = (0.38 + 0.45 * (1 - Math.abs(q)) - 0.15 * q) * presence;
+    const c = lerp3(canColDark, canColSpec, 0.5 - 0.4 * q);
+    set(i, clamp(l), c[0], c[1], c[2]);
+  });
+
+  // Tilted Cylindrical Can Body
+  const bodyPts = [
+    [canX - 5.2, canY - 2.4],
+    [canX - 1.0, canY + 0.5],
+    [canX + 3.2, canY + 3.4],
+  ];
+  brush(bodyPts, [5.4, 5.8, 5.2], [0, 0.5, 1], (i, a, q) => {
+    const aq = Math.abs(q);
+    const spec = Math.exp(-Math.pow((q + 0.35) / 0.28, 2)) * 0.42;
+    const band = (Math.abs(a - 0.18) < 0.08 || Math.abs(a - 0.82) < 0.08) ? 0.12 : 0;
+    const l = clamp(0.28 + 0.46 * (1 - aq) - 0.18 * q + spec + band) * presence;
+    let c = lerp3(canColDark, canColMid, clamp(0.65 - 0.45 * q));
+    c = lerp3(c, band > 0 ? brassCol : canColSpec, clamp(spec + band * 2));
+    set(i, l, c[0], c[1], c[2]);
+  });
+
+  // Tapered Spout extending from lower body toward the flowers
+  const spoutBase = [canX + 2.8, canY + 3.2];
+  const spoutMid  = [canX + 9.2, canY + 2.8];
+  const spoutTip  = [canX + 15.2, canY + 4.2];
+  brush([spoutBase, spoutMid, spoutTip], [1.9, 1.25, 0.85], [0, 0.5, 1], (i, a, q) => {
+    const l = clamp(0.35 + 0.48 * (1 - Math.abs(q)) - 0.2 * q) * presence;
+    const c = lerp3(canColDark, canColSpec, clamp(0.55 - 0.4 * q));
+    set(i, l, c[0], c[1], c[2]);
+  });
+
+  // Brass Rose Sprinkler Head at the spout tip
+  const roseA = [spoutTip[0] - 0.4, spoutTip[1] - 0.3];
+  const roseB = [spoutTip[0] + 1.6, spoutTip[1] + 1.2];
+  brush([roseA, roseB], [1.2, 2.3], [0, 1], (i, a, q) => {
+    const l = clamp(0.48 + 0.42 * (1 - Math.abs(q))) * presence;
+    const c = lerp3([0.65, 0.48, 0.22], brassCol, clamp(0.7 - 0.3 * q));
+    set(i, l, c[0], c[1], c[2]);
+  });
+
+  // 2. Fluid Multi-Stream Parabolic Shower & Glistening Droplets
+  if (pourActive > 0.01) {
+    const numStreams = 6;
+    for (let s = 0; s < numStreams; s++) {
+      const sf = s / (numStreams - 1) - 0.5; // -0.5 .. +0.5 fan spread
+      const startX = roseB[0] + 0.4;
+      const startY = roseB[1] + sf * 1.8;
+
+      // Target spans smoothly across the tulip canopy
+      const swayTarget = Math.sin(age * 1.8 + s * 0.5) * 4.5;
+      const endX = -2.0 + sf * 24.0 + swayTarget;
+      const endY = 62.0 + Math.abs(sf) * 8.0;
+
+      // Build parabolic gravity trajectory
+      const nPts = 11;
+      const sPts = [], sHws = [];
+      for (let k = 0; k < nPts; k++) {
+        const u = k / (nPts - 1);
+        // Progressive stream travel on start/stop
+        const reach = clamp(pourActive * 1.25);
+        const uu = u * reach;
+        const px = startX + (endX - startX) * uu;
+        // Parabolic gravity curve: initial forward velocity, then downward acceleration
+        const py = startY + (endY - startY) * (0.35 * uu + 0.65 * uu * uu);
+        sPts.push([px, py]);
+
+        // Fluid surface-tension wave modulation along the stream
+        const pulse = 0.5 + 0.5 * Math.sin(uu * 18.0 - age * 22.0 + s * 1.7);
+        const w = (0.38 + 0.42 * pulse) * (1.0 - 0.25 * uu) * pourActive;
+        sHws.push(Math.max(0.12, w));
+      }
+
+      brush(sPts, sHws, lin(nPts), (i, a, q, r, c) => {
+        // Traveling fluid packets & specular glints
+        const wavePacket = 0.5 + 0.5 * Math.sin(a * 24.0 - age * 26.0 + s * 2.1);
+        const core = 1.0 - Math.abs(q);
+        const dl = (0.28 + 0.52 * wavePacket) * Math.pow(core, 0.7) * pourActive;
+        const wCol = lerp3([0.35, 0.78, 1.0], [0.90, 0.98, 1.0], wavePacket * core);
+        addLight(i, dl, wCol[0], wCol[1], wCol[2]);
+      });
+
+      // Individual high-speed falling droplets along and beneath each stream
+      for (let d = 0; d < 4; d++) {
+        const uDrop = ((age * (1.35 + (s % 2) * 0.15) + d * 0.25 + s * 0.13) % 1.0);
+        if (uDrop > pourActive * 1.1) continue;
+        const dx = startX + (endX - startX) * uDrop;
+        const dy = startY + (endY - startY) * (0.35 * uDrop + 0.65 * uDrop * uDrop);
+        const tailX = dx - (endX - startX) * 0.045;
+        const tailY = dy - (endY - startY) * (0.35 + 1.3 * uDrop) * 0.045;
+
+        brush([[tailX, tailY], [dx, dy]], [0.25, 0.62], [0, 1], (i, a, q) => {
+          const dl = (0.55 + 0.40 * a) * (1 - Math.abs(q)) * pourActive;
+          addLight(i, dl, 0.82, 0.96, 1.0);
+        });
+      }
+
+      // 3. Crown Splashes & Trickling Dewdrops on the Tulips
+      if (pourActive > 0.4) {
+        const splashPhase = (age * 3.2 + s * 0.41) % 1.0;
+        const splashEnv = Math.sin(Math.PI * splashPhase) * pourActive;
+        for (let side of [-1, 1]) {
+          const sx0 = endX;
+          const sy0 = endY - 1.0;
+          const sx1 = sx0 + side * (2.2 + 3.5 * splashPhase);
+          const sy1 = sy0 - (2.8 * splashPhase - 4.2 * splashPhase * splashPhase);
+          brush([[sx0, sy0], [sx1, sy1]], [0.45 * splashEnv, 0.22 * splashEnv], [0, 1], (i, a, q) => {
+            addLight(i, 0.65 * splashEnv * (1 - Math.abs(q)), 0.78, 0.95, 1.0);
+          });
+        }
+      }
+    }
+
+    // 4. Gentle Dewdrops trickling from the petals down toward the vase & countertop
+    for (let k = 0; k < 10; k++) {
+      const dripPhase = (age * 0.95 + k * 0.31) % 1.0;
+      const dripX = -18.0 + (k / 9) * 36.0 + Math.sin(k * 3.1) * 2.0;
+      const dripY = 66.0 + dripPhase * 22.0;
+      const dripAlpha = Math.sin(Math.PI * dripPhase) * pourActive;
+      brush([[dripX, dripY - 1.2], [dripX, dripY]], [0.18, 0.48], [0, 1], (i, a, q) => {
+        addLight(i, 0.58 * dripAlpha * (1 - Math.abs(q)), 0.72, 0.94, 1.0);
+      });
+    }
+  }
+
+  rowShift.set(savedShift);
+}
+
+
+// ================================================================ Main Scene Assembly
+function scene(t) {
+  // Smoothly interpolate day/night transition
+  const targetDay = isDay ? 1.0 : 0.0;
+  dayMix += (targetDay - dayMix) * 0.08;
+
+  // Extra lively breeze when being watered
+  const waterAge = t - wateringAt;
+  const waterBoost = (waterAge >= 0 && waterAge <= WATER_DURATION)
+    ? 1.0 + 0.35 * Math.sin(Math.PI * clamp(waterAge / WATER_DURATION))
+    : 1.0;
+
+  for (let r = 0; r < ROWS; r++) {                                         
+    const h = clamp((ROWS + 10 - Yr[r]) / 140), w = t - 0.4 * h;
+    rowShift[r] = settings.wind * waterBoost * (0.6 * wave(w, 2) + 0.3 * wave(w, 3, 1) + 0.1 * wave(w, 5, 2)) * Math.pow(h, 1.5);
+  }
+
+  // 1. Volumetric Window, Sky, Mountains, Sun/Moon & Wooden Countertop
+  renderBackgroundAndCountertop(t, dayMix);
+
+  // 2. Back rim of the ceramic vase
+  renderVaseBackRim(dayMix);
+
+  // 3. Tulip Leaves & Stems (Untouched)
+  const growOf = (o) => easeOut((t - o.start) / STEM_DUR);
+  for (const f of FLOWERS) for (const L of f.leaves) leaf(L, t, smoothstep(L.tAt, L.tAt + 0.55, t));   
+  for (const b of BUDS) tube(curve([b.baseX, BASE_Y], b.pos, b.bulge, growOf(b), 14), 0.7, 0.45, STEM);
+  for (const f of FLOWERS) tube(curve([f.baseX, BASE_Y], f.pos, f.bulge, growOf(f), 14), 0.85, 0.5, STEM);
+
+  // 4. 3D Sculpted Ceramic Vase Body (tucks the base of the stems inside the vase)
+  renderVaseBody(t, dayMix);
+
+  // 5. Tulip Flowers & Buds (Untouched)
+  FLOWERS.forEach((f, i) => {                                              
+    if (t < f.end) return;                                                 
+    const swell = smoothstep(f.end, f.end + 0.6, t);
+    const ripe = smoothstep(f.tOpen - 1.0, f.tOpen + 0.3, t);
+    const opening = smoothstep(f.tOpen, f.tOpen + 1.6, t);
+    const breathe = BREATH_DEPTH * (0.5 - 0.5 * Math.cos(TAU * (t - f.tOpen - 3) / BREATH + i * 0.9))
+      * smoothstep(f.tOpen + 1.6, f.tOpen + 3, t);
+    const openness = opening * (1 - breathe);
+    const s = f.size * settings.size * (0.35 + 0.65 * swell) * (0.5 + 0.5 * Math.max(openness, ripe * 0.6));
+    lily(f.pos, f.axis, s, openness, ripe, t, i * 7 + 3, PALETTES[f.col], f.bright);
+  });
+  BUDS.forEach((b, i) => {                                                 
+    if (t < b.end) return;
+    const swell = smoothstep(b.end, b.end + 0.6, t);
+    lily(b.pos, b.axis, b.size * (0.4 + 0.6 * swell), 0.04 + 0.03 * wave(t, 2, i),
+      b.ripe * swell, t, 90 + i, PALETTES[b.col], 0.9);
+  });
+
+  // 6. Volumetric Sun Rays, Dust Motes & Night Fireflies
+  renderAtmosphereAndSunbeams(t, dayMix);
+
+  // 7. Fluid Watering Can, Parabolic Streams & Droplet Splashes
+  renderFluidWatering(t);
+
+  const fade = smoothstep(0, 0.2, t);
+  if (fade < 1) for (let i = 0; i < N; i++) lum[i] *= fade;
+}
+
+
+// ================================================================ ASCII Rasterizer & Multi-Pass Bloom
+const view = document.getElementById("view"), ctx = view.getContext("2d");
+const controls = document.getElementById("controls");
+const status = document.getElementById("scene-status");
+const retryButton = document.getElementById("retry-button");
+const waterButton = document.getElementById("water-button");
+const modeButton = document.getElementById("mode-button");
+let animationStart = performance.now();
+
+const W = COLS * CW, H = ROWS * CH;
+view.width = W; view.height = H;
+const CHARS = BUCKETS.join(""), START = [], COUNT = BUCKETS.map((b) => b.length);
+BUCKETS.reduce((s, b, k) => { START[k] = s; return s + b.length; }, 0);
+const MASKS = [...CHARS].map((ch) => {                                     
+  const g = document.createElement("canvas"); g.width = CW; g.height = CH;
+  const gx = g.getContext("2d");
+  gx.font = FONT; gx.textBaseline = "top"; gx.fillStyle = "#fff"; gx.fillText(ch, 0, 0);
+  const d = gx.getImageData(0, 0, CW, CH).data, m = new Uint8Array(CW * CH);
+  for (let k = 0; k < m.length; k++) m[k] = d[k * 4 + 3];
+  return m;
+});
+const ascii = document.createElement("canvas"); ascii.width = W; ascii.height = H;   
+const actx = ascii.getContext("2d");
+const img = actx.createImageData(W, H), px = img.data, px32 = new Uint32Array(px.buffer);
+
+const glowA = document.createElement("canvas"), glowB = document.createElement("canvas"), glowC = document.createElement("canvas");
+[[glowA, 2], [glowB, 4], [glowC, 8]].forEach(([g, s]) => { g.width = Math.ceil(W / s); g.height = Math.ceil(H / s); });
+
+function draw(frame, t) {
+  px32.fill(0);
+  const fidx = Math.floor(frame / 3);
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const i = r * COLS + c, L = lum[i];
+    let level = 0;
+    while (level < LEVELS.length && L >= LEVELS[level]) level++;
+    if (level === 0) continue;
+    const ch = START[level] + hash3(r, c, fidx) % COUNT[level], m = MASKS[ch];
+    const k = (0.45 + 0.75 * L) * 1.6 / 255 * 255, j = i * 3;
+    const R = rgb[j] * k, G = rgb[j + 1] * k, B = rgb[j + 2] * k;
+    let o0 = (r * CH) * W + c * CW, mi = 0;
+    for (let y = 0; y < CH; y++, o0 += W) {               
+      for (let x = 0; x < CW; x++, mi++) {
+        const v = m[mi];
+        if (v) {
+          const pr = Math.min(255, 255 * R) | 0, pg = Math.min(255, 255 * G) | 0, pb = Math.min(255, 255 * B) | 0;
+          px32[o0 + x] = (v << 24) | (pb << 16) | (pg << 8) | pr;     
+        }
+      }
+    }
+  }
+  actx.putImageData(img, 0, 0);
+
+  // Smoothly blend ambient canvas backdrop between midnight and sunlit shadow
+  const bgR = Math.round(lerp(4, 11, dayMix));
+  const bgG = Math.round(lerp(5, 16, dayMix));
+  const bgB = Math.round(lerp(12, 26, dayMix));
+  ctx.fillStyle = `rgb(${bgR},${bgG},${bgB})`;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.drawImage(ascii, 0, 0);
+  if (settings.glow > 0) {                                                 
+    let src = ascii;
+    for (const g of [glowA, glowB, glowC]) {
+      const gx = g.getContext("2d");
+      gx.imageSmoothingEnabled = true; gx.clearRect(0, 0, g.width, g.height);
+      gx.drawImage(src, 0, 0, g.width, g.height); src = g;
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, settings.glow);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(glowC, 0, 0, W, H);
+    if (settings.glow > 1) { ctx.globalAlpha = settings.glow - 1; ctx.drawImage(glowC, 0, 0, W, H); }
+    ctx.restore();
+  }
+}
+
+let lastDraw = -1e9;
+function tick(now) {
+  if (now - lastDraw >= 1000 / FPS - 2) {
+    lastDraw = now;
+    const t = (now - animationStart) / 1000;
+    scene(t);
+    draw(Math.floor(t * FPS), t);
+    controls.hidden = t < BLOOM_TIME;
+    if (wateringAt !== -Infinity && t - wateringAt > WATER_DURATION) {
+      wateringAt = -Infinity;
+      if (status.textContent === "Watering the tulips...") status.textContent = "The tulips look refreshed.";
+    }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+retryButton.addEventListener("click", () => {
+  animationStart = performance.now();
+  wateringAt = -Infinity;
+  status.textContent = "The tulips are blooming...";
+  controls.hidden = true;
+});
+
+waterButton.addEventListener("click", () => {
+  wateringAt = (performance.now() - animationStart) / 1000;
+  status.textContent = "Watering the tulips...";
+});
+
+modeButton.addEventListener("click", () => {
+  isDay = !isDay;
+  modeButton.textContent = isDay ? "Day" : "Night";
+  status.textContent = isDay ? "Sunlight reaches the flowers." : "The flowers rest in the night.";
+});
+
+let resizeTimer = 0;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const want = Math.max(150, Math.min(640, Math.round(ROWS * CH / CW * innerWidth / Math.max(1, innerHeight))));
+    if (Math.abs(want - COLS) > 4) location.reload();
+  }, 400);
+});
+</script>
+</body>
+</html>
